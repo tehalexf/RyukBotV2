@@ -16,5 +16,5 @@ class BNetAuthService(ModularService):
         token, time_remaining = bna.get_token(secret=secret)
         return token, time_remaining
 
-    def exposed_get_restore_code(self, secret, serial)
+    def exposed_get_restore_code(self, secret, serial):
         return bna.get_restore_coe(serial, secret)
