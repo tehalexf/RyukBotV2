@@ -10,9 +10,16 @@ class FirebaseService(ModularService):
         firebaseObjects = self.upstream("configservice").exposed_firebase_login()
         auth = firebase.FirebaseAuthentication(firebaseObjects[2], firebaseObjects[1])
         self.firebaseObj = firebase.FirebaseApplication(firebaseObjects[0], authentication=auth)
+        # self.exposed_add_authenticated_user()
 
-    def exposed_discord_id(self):
-        return self.Config.get('Discord', 'clientID')
-    
-    def exposed_firebase_login(self): # this is an exposed method
-        return (self.Config.get('Firebase', 'domain'), self.Config.get('Firebase', 'username'), self.Config.get('Firebase', 'key'))
+    def exposed_get_authenticated_users(self):
+        a = self.firebaseObj.get('/ryukbotv2/data/authedusers', None)
+        print(a)
+        return a
+        
+    def exposed_add_authenticated_user(self):
+        a = self.firebaseObj.patch('/ryukbotv2/data/authedusers', {'data': [{'username': 'ryuklikesapples'}, {'username' : 'bubby'}]})
+        print(a)
+        return a
+ 
+

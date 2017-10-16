@@ -16,7 +16,7 @@ class OverwatchApiService(ModularService):
         self.wait_for_manager()
         self.inflector = inflect.engine()
         self.stats = 'https://playoverwatch.com/en-us/career/{platform}/{region}/{battle_tag}'
-        self.loop = asyncio.get_event_loop()  
+        self.loop = asyncio.get_event_loop()
         # loop.run_until_complete(self.query("Ryuk#1723"))
         # print("MEMEMEEM")
         # loop.run_until_complete(self.query("Ryuk#1723"))
