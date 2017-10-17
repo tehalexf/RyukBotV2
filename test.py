@@ -7,8 +7,9 @@ from microservices.overwatchapi import OverwatchApiService
 from microservices.gmail import GmailService
 from microservices.bnetauth import BNetAuthService
 from microservices.permissionsagent import PermissionsAgentService
+from microservices.discordcontext import DiscordContextService
 from hotswap.objects import ManagerInvoker
 
-services = [ConfigService, FirebaseService, DiscordTransportService, DiscordService, GmailService, OverwatchApiService, BNetAuthService, PermissionsAgentService]
+services = [ConfigService, FirebaseService, DiscordTransportService, DiscordService, GmailService, OverwatchApiService, BNetAuthService, PermissionsAgentService, DiscordContextService]
 manager_port = 14200
 ManagerInvoker(manager_port, services, [x+manager_port + 1 for x in range(20)])

@@ -89,6 +89,7 @@ class ModularService(object):
         t.start()
 
     def finalize(self):
+        print("FINALIZED")
         pass
 
     def wait_for_manager(self):
