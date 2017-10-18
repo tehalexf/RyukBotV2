@@ -13,13 +13,11 @@ class OverwatchApiService(ModularService):
     def __init__(self, port, service_name, manager_port, query_mode=False):
         asyncio.set_event_loop(asyncio.new_event_loop())
         ModularService.__init__(self, port, service_name, manager_port, query_mode = query_mode)
+        self.add_upstream("firebaseservice")
         self.wait_for_manager()
         self.inflector = inflect.engine()
         self.stats = 'https://playoverwatch.com/en-us/career/{platform}/{region}/{battle_tag}'
         self.loop = asyncio.get_event_loop()  
-        # loop.run_until_complete(self.query("Ryuk#1723"))
-        # print("MEMEMEEM")
-        # loop.run_until_complete(self.query("Ryuk#1723"))
 
     def underscorize_stat_name(self, name):
         words = re.split(r'\s+', name.lower().replace('-', ' '))
@@ -150,6 +148,16 @@ class OverwatchApiService(ModularService):
             output[self.underscorize_stat_name(name.text_content().strip())] = self.parse_stat_value(value.text_content().strip())
         
         return output
+    
+    async def make_request_and_update(self, name):
+        details = await self.query(name)
+        self.upstream('firebaseservice').exposed_patch_ow_account_multiple(name, {'level' :details['level'], 'rank' : details['competitive_rank'] or 'Not Ranked' })
+        print(details)
+        print(details['competitve_rank'] or 'Not Ranked')
+
+        
+    def exposed_update_account(self, name):
+        self.loop.run_until_complete(self.make_request_and_update(name))
 
     async def query(self, battle_tag, platform='pc', region='us', sem=asyncio.Semaphore(1)):
         response = None

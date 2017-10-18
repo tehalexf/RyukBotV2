@@ -24,3 +24,4 @@ unattended-upgrades==0.1
 urllib3==1.7.1
 websockets==3.4
 python-bna==4.1.0
+tabulate==0.8.1
