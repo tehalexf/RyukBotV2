@@ -6,6 +6,18 @@ import time
 from xmlrpc.server import SimpleXMLRPCServer
 import inspect
 
+class DocumentWriter():
+    def __init__(self):
+        self.descriptions = []
+    def describe(self, usage, regex, text_description, glob=True):
+        def decorator(func):
+            self.descriptions.append({'u' : usage, 'r' : regex, 't' : text_description, 'f' : func, 'a' : glob})
+            return func
+        return decorator
+    
+    def get_descriptions(self):
+        return self.descriptions
+
 class ServerWrapper():
     def __init__(self, port, className, instanceName, *args):
         self.server = SimpleXMLRPCServer(('localhost', port), allow_none=True,logRequests=False)

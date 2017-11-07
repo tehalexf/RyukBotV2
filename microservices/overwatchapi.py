@@ -1,5 +1,5 @@
 from hotswap.objects import ModularService
-from config.consts import *
+from config.ow_consts import *
 import requests
 import lxml.html
 import inflect
@@ -151,9 +151,7 @@ class OverwatchApiService(ModularService):
     
     async def make_request_and_update(self, name):
         details = await self.query(name)
-        self.upstream('firebaseservice').exposed_patch_ow_account_multiple(name, {'level' :details['level'], 'rank' : details['competitive_rank'] or 'Not Ranked' })
-        print(details)
-        print(details['competitve_rank'] or 'Not Ranked')
+        self.upstream('firebaseservice').exposed_patch_ow_account_multiple(name, {'level' : details.get('level', 0), 'rank' : details.get('competitive_rank', 'Unranked') })
 
         
     def exposed_update_account(self, name):

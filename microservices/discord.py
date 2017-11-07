@@ -1,4 +1,4 @@
-from hotswap.objects import ModularService
+from hotswap.objects import ModularService, DocumentWriter
 from firebase import firebase
 import discord
 from discord.ext import commands
@@ -9,155 +9,204 @@ import ast
 import inspect
 import dis
 import types
-
 from tabulate import tabulate
 import pprint
-
-def get_names(f):
-    methods = inspect.getmembers(f, lambda x: True)
-    
-    pp = pprint.PrettyPrinter(indent=4)
-    pp.pprint(methods)
+from config.discord_consts import *
 
 
-def usage(use):
-    def decorator(func):
-        func.usage = use
-        return func
-    return decorator
+def extract_dict_values(dictionary):
+    keys = list(dictionary.keys())
+    keys.sort()
+    return [dictionary[item] for item in keys]
 
-def description(text_description):
-    def decorator(func):
-        func.description = text_description
-        return func
-    return decorator
+def create_embed(title, description, color, fields):
+    embedded = discord.Embed( title=title, description=description, colour=color)
+    [embedded.add_field(name=field[0], value=field[1], inline=field[2]) for field in fields]
+    return embedded
+
+def clean_cmd_string(string):
+    cleanStr = ' '.join(string.strip().split())
+    return (cleanStr.replace(prefix, '').strip(), cleanStr.startswith(prefix))
+
+def fuzzy_search(search, listofNames, caseInsensitive):
+    return list(filter(lambda x: (search.lower() if caseInsensitive else search)
+                            in (x.lower() if caseInsensitive else x), listofNames.keys()))
+
+DiscordDocumentWriter = DocumentWriter()
 
 class DiscordObject():
 
     def getAllDocumentation(self):
-        
-        a = get_names(self.__init__)
-        
-        print(a)
-
-    
-    def generateCommands(self):
-        @description("WAHOO??")
-        def cuck1():
-            print("WAHOO")
-
-        @description("WAHOO2??")
-        def cuck2():
-            print("WAHOO")
-
+        self.commandMap = DiscordDocumentWriter.get_descriptions()
+        pass
     def __init__(self, token, serviceInstance):
         asyncio.set_event_loop(asyncio.new_event_loop())
-
-        # client = commands.Bot(command_prefix='!rb ', description='The One And Only RyukBot!')
         client = discord.Client()
-        
-        self.generateCommands()
-        self.getAllDocumentation()
+    
+        def generateCommands(dClient):
+            @DiscordDocumentWriter.describe("usage", "usage", "Displays commands")
+            async def show_usages(message, match):
+                table = DiscordDocumentWriter.get_descriptions()
+                public = list(filter(lambda x: x['a'], table))
+                private = list(filter(lambda x: not x['a'], table))
+                pubTable = map(lambda x: [x['u'], x['t']], public)
+                privTable = map(lambda x: [x['u'], x['t']], private)
+                await send(message, '```Public Channel:\n%s\n\nPrivate Message:\n%s```' % (tabulate(sorted(pubTable, key=lambda x: x[0]), tablefmt="plain"), tabulate(sorted(privTable, key=lambda x: x[0]), tablefmt="plain")))
 
-        def create_embed(title, description, color, fields):
-            embedded = discord.Embed(
-                title=title, description=description, colour=color)
-            for field in fields:
-                name, value, inline = field
-                embedded.add_field(name=name, value=value, inline=inline)
-            return embedded
+            @DiscordDocumentWriter.describe("hello", "hello", "Says hello!")
+            async def say_hello(message, match):
+                print("HELLO!")
+            
 
-        async def background():
-            await client.wait_until_ready()
-            counter = 0
-            channel = discord.Object(id='channel_id_here')
-            while not client.is_closed:
-                counter += 1
-                await client.send_message(channel, counter)
-                await asyncio.sleep(60)  # task runs every 60 seconds
-
-        async def invalid_template(message):
-            await client.send_message(message.channel, "Invalid formatted template.")
-
-        async def send(message, text):
-            await client.send_message(message.channel, text)
-
-
-        def extract_elems(thisdict):
-            keys = list(thisdict.keys())
-            keys.sort()
-            ret = []
-            for item in keys:
-                ret.append(thisdict[item])
-            return ret
-
-        async def check_rank(name):
-            serviceInstance.upstream(
-                'overwatchapiservice').exposed_update_account(name)
-
-        async def handle_global_commands(message):
-            _message = message.content.strip()
-            if not _message.startswith('!rb '):
-                return
-            _message = _message.replace('!rb ', '').strip()
-
-            if(_message.startswith('remove account')):
-                match = re.search("remove account\s+(.*)$", _message)
-                try:
-                    if not match:
-                        raise
-                    account = await fuzzy_search_account_name(message, match.group(1))
-                    if not account:
-                        return
-                    serviceInstance.upstream(
-                        'firebaseservice').exposed_remove_fake_ow_account(account)
-                except:
-                    await send(message, 'No account provided.')
+            @DiscordDocumentWriter.describe("account add {template}", "account add\s+({.*})$", "Adds/updates accounts using the template", False)
+            async def add_account(message, match):
+                if not match:
+                    await invalid_x(message, 'template')
                     return
-                await send(message, "Account removed successfully.")
-                return
+                template = ast.literal_eval(match.group(1))
+                if False in [x in template.keys() for x in ['login', 'password', 'battletag']]:
+                    return await invalid_x(message, 'template')
+                template['hidden'] = False
+                serviceInstance.upstream(
+                    'firebaseservice').exposed_add_ow_account(template)
+                await send(message, "Account added successfully.")
 
-            if(_message.startswith('check account')):
-                match = re.search("check account\s+(.*)$", _message)
-                try:
-                    if not match:
-                        raise
-                    account = await fuzzy_search_account_name(message, match.group(1))
-                    if not account:
-                        return
-                    await check_rank(account)
-                except:
-                    await send(message, 'No account provided.')
-                    return
-                await send(message, "Account is being updated. check back soon.")
-                return
+            @DiscordDocumentWriter.describe("account tmp", "account tmp$", "Shows the account template")
+            async def remove_account(message, match):
+                await send(message, "Copy the following template and run `" + prefix + " account add {template}` where {template} is given below:  ```{'login' : 'YOUR_LOGIN'  , 'password' : 'YOUR_PASSWORD'  ,   'battletag' : 'YOUR_BATTLETAG'  }```")
 
-            if(_message.startswith('list')):
+            @DiscordDocumentWriter.describe("account rm {accountname}", "account\s+rm\s+(.*[A-Za-z].*)$", "Removes an account from Ryukbot")
+            async def remove_account(message, match):
+                account, error = fuzzy_account_search(match.group(1))
+                if not account:
+                    return await send(message, error)
+                serviceInstance.upstream('firebaseservice').exposed_remove_fake_ow_account(account)
+                await send(message, "Account removed successfully")
+
+            @DiscordDocumentWriter.describe("account ref {accountname}", "account\s+ref\s+(.*[A-Za-z].*)$", "Refreshes the details of an account")
+            async def refresh(message, match):
+                account, error = fuzzy_account_search(match.group(1))
+                if not account:
+                    return await send(message, error)
+                await send(message, "Refresh in progress for %s." % account)
+                await check_rank(account)
+                await send(message, "TODO: Display account.")
+
+            @DiscordDocumentWriter.describe("account list", "account\s+list$", "Lists the Overwatch account details")
+            async def list_accounts(message, match):
                 accounts = get_all_ow_accounts(rename={'auth': 'Linked'})
-                pure_data = map(extract_elems, accounts)
+                pure_data = map(extract_dict_values, accounts)
+
                 # TODO: AGGREGATE ALL KEYS
                 table = tabulate(pure_data, map(lambda x: x.title(), sorted(
-                    list(accounts[0].keys()))), tablefmt="grid")
+                    list(accounts[0].keys()))), tablefmt="simple")
                 await send(message, '```%s```' % table)
                 return
 
-        async def fuzzy_search_account_name(message, name):
-            accounts = serviceInstance.upstream(
-                'firebaseservice').exposed_get_ow_accounts()
-            filters = list(filter(lambda x: name.lower()
-                                  in x.lower(), accounts.keys()))
-            if (len(filters) > 1):
-                names = ('\n\t'.join(filters))
-                await send(message, "Multiple accounts matched. Did you mean:%s " % names)
-                return None
-            if (len(filters) == 0):
-                await send(message, "No accounts matched your request.")
-                return None
-            return filters[0]
 
-        def get_all_ow_accounts(password=False, rename={}):
+            @DiscordDocumentWriter.describe("auth new", "auth new$", "Generates a new Authenticator", False)
+            async def new_auth(message, match):
+                authenticator = serviceInstance.upstream(
+                    'bnetauthservice').exposed_generate_serial()
+                serviceInstance.upstream('discordcontextservice').exposed_update_context(
+                    message.author.id, 'lastauth', authenticator)
+                firstToken, expiration = serviceInstance.upstream(
+                    'bnetauthservice').exposed_get_token(authenticator[1])
+                if expiration < 30:
+                    await send(message, 'Requesting authenticator. This process will take %d seconds...' % expiration)
+                    await asyncio.sleep(expiration)
+                    firstToken, expiration = serviceInstance.upstream(
+                        'bnetauthservice').exposed_get_token(authenticator[1])
+
+                embed = create_embed('Authenticator Details', 'Keep this info safe! You have 30 seconds to enter the details. If you should fail, \
+                run `auth getl` to get another Autneticator Code.', 0xFFFFFF,
+                                     [
+                                         ['Serial', authenticator[0], True],
+                                         ['Authenticator Code', firstToken, True],
+                                         ['Restore Code', authenticator[2], True],
+                                         ['Secret', authenticator[1], True]
+                                     ])
+                await send(message, None, embed=embed)
+                await asyncio.sleep(29)
+                await send(message, 'Authenticator with code %s has expired.' % firstToken)
+
+            @DiscordDocumentWriter.describe("auth getl", "auth getl$", "Gets an auth code for the last auth created by user", False)
+            async def new_auth(message, match):
+                authobject = serviceInstance.upstream(
+                    'discordcontextservice').exposed_get_context(message.author.id, 'lastauth')
+                if not authobject:
+                    await send(message, 'No previous authenticator found, service may have been restarted. Run `new auth` to generate an authenticator.')
+                    return
+                
+                firstToken, expiration = serviceInstance.upstream(
+                    'bnetauthservice').exposed_get_token(authobject[1])
+
+                if expiration < 20:
+                    await send(message, 'Requesting authenticator code. This process will take %d seconds...' % expiration)
+                    asyncio.sleep(expiration)
+
+                firstToken, expiration = serviceInstance.upstream(
+                    'bnetauthservice').exposed_get_token    (authobject[1])
+
+                embed = create_embed('Authenticator Code', 'You have %s seconds to enter the authenticator. If you should fail, request another code.' % expiration, 0xFFFFFF,
+                                     [
+                                         ['Code', firstToken, True]
+                                     ])
+                await send(message, None, embed=embed)
+                await asyncio.sleep(29)
+                await send(message, 'Authenticator with code %s has expired.' % firstToken)
+
+
+            @DiscordDocumentWriter.describe("auth attach {accountname}", "auth attach\s+(.*)$", "Attaches an existing auth to account {accountname}", False)
+            async def attach_auth(message, match):
+
+                authobject = serviceInstance.upstream(
+                    'discordcontextservice').exposed_get_context(message.author.id, 'lastauth')
+                if not authobject:
+                    await send(message, 'No previous authenticator found, or service may have been restarted. Run `new auth` to generate an authenticator.')
+                    return
+
+                account, error = fuzzy_account_search(match.group(1))
+                if not account:
+                    return await send(message, error)
+
+                serviceInstance.upstream('firebaseservice').exposed_patch_ow_account(
+                    account, 'auth', {'serial': authobject[0], 'secret': authobject[1]})
+
+                await send(message, "Authenticator %s added to %s successfully." % (authobject[0], account))
+
+            @DiscordDocumentWriter.describe("auth rm {accountname}", "auth rm\s+(.*)$", "Removes auth", False)
+            async def remove_auth(message, match):
+                await send(message, 'For safety reasons, you cannot remove auths from an account.')
+
+        # Invalid message shortcut
+        async def invalid_x(message, x):
+            await client.send_message(message.channel, "Invalid formatted %s." % x)
+
+        # Shortcut for send_message
+        async def send(message, text, embed=None):
+            await client.send_message(message.channel, text, embed=embed)
+
+        # OWAPI Operations
+        async def check_rank(name):
+            serviceInstance.upstream('overwatchapiservice').exposed_update_account(name)
+
+        # Firebase operations
+        def patch_ow_account(tag, field, value):
+            serviceInstance.upstream('firebaseservice').exposed_patch_ow_account(tag, field, value)
+
+        def fuzzy_account_search(account):
+            accounts = serviceInstance.upstream('firebaseservice').exposed_get_ow_accounts()
+            accounts = fuzzy_search(account, accounts, True)
+            if (len(accounts) > 1):
+                return (None, "Multiple accounts matched. Did you mean:%s " % '\n\t'.join(accounts))
+            if (len(accounts) == 0):
+                return (None, "No accounts matched your search.")
+            return (accounts[0], "Account found.")
+
+        def get_all_ow_accounts(login=False, rename={}):
             template = {'auth': 'None', 'perms': 'Public', 'rank': 'Unranked'}
-            accounts = extract_elems(serviceInstance.upstream(
+            accounts = extract_dict_values(serviceInstance.upstream(
                 'firebaseservice').exposed_get_ow_accounts())
             keys = set()
             for account in accounts:
@@ -165,8 +214,9 @@ class DiscordObject():
                 for key in template.keys():
                     if key not in account.keys():
                         account[key] = template[key]
-                if not password:
+                if not login:
                     account['password'] = '[Hidden]'
+                    account['login'] = '[Hidden]'
                 for key in rename.keys():
                     if key in account.keys() and account[key] != None and (key not in template.keys() or (key in template.keys() and account[key] != template[key])):
                         account[key] = rename[key]
@@ -179,138 +229,24 @@ class DiscordObject():
                             account[key] = 'N/A'
             return accounts
 
-        def patch_ow_account(tag, field, value):
-            serviceInstance.upstream(
-                'firebaseservice').exposed_patch_ow_account(tag, field, value)
+        async def handle_commands(message, glob):
+            command, hasPrefix = clean_cmd_string(message.content)
 
-        @usage("meme")
-        @description("Says a meme")
-        async def handle_private_message(message):
-            _message = message.content.strip()
-
-            if(message.content.strip().lower() in ['new authenticator', 'new auth']):
-
-                authenticator = serviceInstance.upstream(
-                    'bnetauthservice').exposed_generate_serial()
-                serviceInstance.upstream('discordcontextservice').exposed_update_context(
-                    message.author.id, 'lastauth', authenticator)
-
-                firstToken, expiration = serviceInstance.upstream(
-                    'bnetauthservice').exposed_get_token(authenticator[1])
-                await client.send_message(message.author, 'Requesting authenticator. This process will take %d seconds...' % expiration)
-                if expiration < 30:
-                    await asyncio.sleep(expiration)
-                    firstToken, expiration = serviceInstance.upstream(
-                        'bnetauthservice').exposed_get_token(authenticator[1])
-
-                embed = create_embed('Authenticator Details', 'Keep this info safe! You have 30 seconds to enter the details. If you should fail, \
-                    run `get auth` to get another Autneticator Code.', 0xFFFFFF,
-                                     [
-                                         ['Serial', authenticator[0], True],
-                                         ['Authenticator Code', firstToken, True],
-                                         ['Restore Code', authenticator[2], True],
-                                         ['Secret', authenticator[1], True]
-                                     ])
-                await client.send_message(message.author, embed=embed)
-                await asyncio.sleep(29)
-                await client.send_message(message.author, 'Authenticator with code %s has expired.' % firstToken)
-
-            elif (message.content.strip().lower() in ['get auth']):
-                authobject = serviceInstance.upstream(
-                    'discordcontextservice').exposed_get_context(message.author.id, 'lastauth')
-                if not authobject:
-                    await client.send_message(message.author, 'No previous authenticator found, service may have been restarted. Run `new auth` to generate an authenticator.')
-                    return
-                firstToken, expiration = serviceInstance.upstream(
-                    'bnetauthservice').exposed_get_token(authobject[1])
-
-                timeLeft = expiration
-
-                if expiration > 20:
-                    timeLeft = 30 - expiration
-
-                await client.send_message(message.author, 'Requesting authenticator code. This process will take %d seconds...' % timeLeft)
-                if expiration < 20:
-                    await asyncio.sleep(expiration)
-                    firstToken, expiration = serviceInstance.upstream(
-                        'bnetauthservice').exposed_get_token(authobject[1])
-                    timeLeft = 30
-
-                embed = create_embed('Authenticator Code', 'You have %s seconds to enter the authenticator. If you should fail, \
-                    request another code.' % timeLeft, 0xFFFFFF,
-                                     [
-                                         ['Code', firstToken, True]
-                                     ])
-                await client.send_message(message.author, embed=embed)
-                await asyncio.sleep(29)
-                await client.send_message(message.author, 'Authentication code %s has expired.' % firstToken)
-            elif (message.content.strip().lower().startswith('attach auth')):
-
-                authobject = serviceInstance.upstream(
-                    'discordcontextservice').exposed_get_context(message.author.id, 'lastauth')
-                if not authobject:
-                    await client.send_message(message.author, 'No previous authenticator found, service may have been restarted. Run `new auth` to generate an authenticator.')
-                    return
-
-                match = re.search("attach auth\s+(.*)\s*$",
-                                  message.content.strip())
-                try:
-                    if not match:
-                        raise
-                    account = await fuzzy_search_account_name(message, match.group(1))
-                except:
-                    await send(message, "Invalid format.")
-                    return
-                if account is None:
-                    return
-
-                # serviceInstance.upstream('firebaseservice').exposed_patch_ow_account(account, 'auth', authobject)
-                serviceInstance.upstream('firebaseservice').exposed_patch_ow_account(
-                    account, 'auth', {'serial': authobject[0], 'secret': authobject[1]})
-
-                await send(message, "Authenticator %s added to %s successfully." % (authobject[0], account))
-
+            if not hasPrefix and glob:
                 return
             
-            
+            matchedCommands = [X for X in [(re.search(item['r'], command), item) for item in self.commandMap] if X[0] is not None]                  
+            if len(matchedCommands) > 1:
+                return await send(message, "Error: multiple commands matched: %s" % (', '.join([ x[1]['u'] for x in matchedCommands   ])))
+            elif len(matchedCommands) == 0:
+                return await send(message, "Invalid command.")
 
-            elif(_message.startswith('template')):
-                await send(message, "Copy the following template and run `!rb add account <template>` where <template> is given below:  ```{'login' : 'YOUR_LOGIN'  , 'password' : 'YOUR_PASSWORD'  ,   'battletag' : 'YOUR_BATTLETAG'  }```")
-                return
+            command = matchedCommands[0]
 
-            elif(_message.startswith('add account')):
-                match = re.search("add account\s+({.*})$", _message)
-                try:
-                    if not match:
-                        raise
-                    template = ast.literal_eval(match.group(1))
-                    if False in [x in template.keys() for x in ['login', 'password', 'battletag']]:
-                        raise
-                    template['hidden'] = False
-                    serviceInstance.upstream(
-                        'firebaseservice').exposed_add_ow_account(template)
-                except Exception as e:
-                    print(e)
-                    await invalid_template(message)
-                    return
-                await send(message, "Account added successfully.")
-                return
+            if (glob and not command[1]['a']):
+                return await send(message, "Private command cannot be run in public channel.")
 
-            if(_message.startswith('update account')):
-                match = re.search("update account\s+({.*})$", _message)
-                try:
-                    if not match:
-                        raise
-                    template = ast.literal_eval(match.group(1))
-                    if False in [x in template.keys() for x in ['battletag']]:
-                        raise
-                    serviceInstance.upstream(
-                        'firebaseservice').exposed_add_ow_account(template)
-                except:
-                    await send(message, 'Template invalid / Battletag does not seem to exist in template or in database.')
-                    return
-                await send(message, "Account updated successfully.")
-                return
+            await command[1]['f'](message, command[0])
 
         @client.event
         async def on_message(message):
@@ -319,21 +255,19 @@ class DiscordObject():
                 return
 
             if (message.channel.is_private):
-                pass
-                await handle_private_message(message)
+                await handle_commands(message, False)
             else:
-                pass
-
-            await handle_global_commands(message)
-
+                await handle_commands(message, True)
 
         @client.event
         async def on_ready():
             print("Service discordservice has connected.")
             pass
 
-        client.run(token)
+        generateCommands(client)
+        self.getAllDocumentation()
 
+        client.run(token)
 # ADD CACHED PERMISSIONS CHECKING
 
 class DiscordService(ModularService):
