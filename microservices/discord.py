@@ -103,6 +103,25 @@ class DiscordObject():
                 await send(message, '```%s```' % table)
                 return
 
+            @DiscordDocumentWriter.describe("account view {accountname}", "account view\s+(.*[A-Za-z].*)$", "Shows an overwatch account", False)
+            async def list_accounts(message, match):
+                account, error = fuzzy_account_search(match.group(1))
+                if not account:
+                    return await send(message, error)
+                
+                accounts = get_all_ow_accounts(login=True)
+                
+                found = list(filter(lambda x: x['battletag'] == account, accounts))[0]
+                embed = create_embed('Account Details', 'Use the details below to log into an account. Then, run `auth get` to get the auth code.', 0xFFFFFF,
+                                     [
+                                         ['Login', found['login'], True],
+                                         ['Password', found['password'], True]
+                                     ])
+                
+                serviceInstance.upstream('discordcontextservice').exposed_update_context(
+                    message.author.id, 'lastviewauth', [found['auth']['secret'], found['auth']['serial'], found['auth']['restore']])
+                await send(message, None, embed=embed)
+                return
 
             @DiscordDocumentWriter.describe("auth new", "auth new$", "Generates a new Authenticator", False)
             async def new_auth(message, match):
@@ -156,6 +175,31 @@ class DiscordObject():
                 await asyncio.sleep(29)
                 await send(message, 'Authenticator with code %s has expired.' % firstToken)
 
+            @DiscordDocumentWriter.describe("auth get", "auth get$", "Gets an auth code for the last account viewed by user", False)
+            async def new_auth(message, match):
+                authobject = serviceInstance.upstream(
+                    'discordcontextservice').exposed_get_context(message.author.id, 'lastviewauth')
+                if not authobject:
+                    await send(message, 'No previous authenticator found, service may have been restarted. Run `new auth` to generate an authenticator.')
+                    return
+                
+                firstToken, expiration = serviceInstance.upstream(
+                    'bnetauthservice').exposed_get_token(authobject[1])
+
+                if expiration < 20:
+                    await send(message, 'Requesting authenticator code. This process will take %d seconds...' % expiration)
+                    asyncio.sleep(expiration)
+
+                firstToken, expiration = serviceInstance.upstream(
+                    'bnetauthservice').exposed_get_token    (authobject[1])
+
+                embed = create_embed('Authenticator Code', 'You have %s seconds to enter the authenticator. If you should fail, request another code.' % expiration, 0xFFFFFF,
+                                     [
+                                         ['Code', firstToken, True]
+                                     ])
+                await send(message, None, embed=embed)
+                await asyncio.sleep(29)
+                await send(message, 'Authenticator with code %s has expired.' % firstToken)
 
             @DiscordDocumentWriter.describe("auth attach {accountname}", "auth attach\s+(.*)$", "Attaches an existing auth to account {accountname}", False)
             async def attach_auth(message, match):
@@ -171,7 +215,7 @@ class DiscordObject():
                     return await send(message, error)
 
                 serviceInstance.upstream('firebaseservice').exposed_patch_ow_account(
-                    account, 'auth', {'serial': authobject[0], 'secret': authobject[1]})
+                    account, 'auth', {'serial': authobject[0], 'secret': authobject[1], 'restore': authobject[2]})
 
                 await send(message, "Authenticator %s added to %s successfully." % (authobject[0], account))
 
