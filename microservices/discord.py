@@ -12,7 +12,7 @@ import types
 from tabulate import tabulate
 import pprint
 from config.discord_consts import *
-
+from random import *
 
 def extract_dict_values(dictionary):
     keys = list(dictionary.keys())
@@ -56,7 +56,80 @@ class DiscordObject():
             @DiscordDocumentWriter.describe("hello", "hello", "Says hello!")
             async def say_hello(message, match):
                 print("HELLO!")
+                for item in (message.server.roles):
+                    print(item.name, item.id)
             
+            @DiscordDocumentWriter.describe("whitelist", "whitelist.*", "Whitelists a user to the RyukBot chat")
+            async def whitelist(message, match):
+                
+                for item in (message.server.roles):
+                    print(item.name, item.id)
+            
+            @DiscordDocumentWriter.describe("poll template", "poll template", "Shows the poll template")
+            async def poll_template(message, match):
+                await send(message, "(Duration in Seconds)```{'duration': 30, 'title': 'Test Poll Title', 'choices': ['Choice 1', 'Choice 2'] }```")
+                
+            @DiscordDocumentWriter.describe("poll", "poll\s+({.*})", "Runs a poll. Run `poll template` for template.`")
+            async def poll(message, match):
+                if not match:
+                    await invalid_x(message, 'template')
+                    return
+                template = ast.literal_eval(match.group(1))
+                if False in [x in template.keys() for x in ['duration', 'title', 'choices']]:
+                    return await invalid_x(message, 'template')
+                if not template['duration']:
+                    return await invalid_x(message, 'duration')
+                duration = 0
+                try:
+                    duration = int(template['duration'])
+                except:
+                    return await invalid_x(message, 'duration')
+                if not template['choices'] or not isinstance(template['choices'], (list,)) or len(template['choices']) == 0:
+                    return await invalid_x(message, 'choices')
+                emojiis = list(client.get_all_emojis())
+                emojiiSet = set()
+                while(len(emojiiSet) != len(template['choices'])):
+                    emojiiSet.add(emojiis[randint(0, len(emojiis))])
+                description = ""
+                mapping = {}
+                for index, item in enumerate(emojiiSet):
+                    description += ("%s: %s\n" % (item, template['choices'][index]))
+                    mapping[item] = template['choices'][index]
+                embed = create_embed(template['title'], description, 0xFFFFFF, [])
+                posted_message = await send(message, None, embed=embed)
+                loop = asyncio.get_event_loop()
+                
+                for emojii in emojiiSet:
+                    await client.add_reaction(posted_message, emojii)
+                await client.delete_message(message)
+                await asyncio.sleep(template['duration'])
+                get_msg = await client.get_message(posted_message.channel, posted_message.id)
+                # for item in zz.reactions:
+                    # print(item.emoji in emojiiSet)
+                results = "The results are in!\n"
+                resultlist = []
+                for i, reaction in enumerate(get_msg.reactions):
+                    if (reaction.emoji in emojiiSet):
+                        resultlist.append([len(list(await client.get_reaction_users(reaction, limit=100))), mapping[reaction.emoji]])
+                    else:
+                        continue
+                #     
+                resultlist = sorted(resultlist, key=lambda x: -1 * x[0])
+                
+                for item in resultlist:
+                    results += ("%d: %s\n" % (item[0] - 1, item[1]))
+                await send(get_msg, results)
+                
+            @DiscordDocumentWriter.describe("listheros", "listheros", "DEBUG")
+            async def say_hello(message, match):
+                posted_message = await send(message, 'Offense Heros')
+                loop = asyncio.get_event_loop()
+                for emojii in ['Doomfist:378295236452941825','Genji:303381448495202304','McCree:303381448021377025','Pharah:303381448348663809','Reaper:303381447425916951','Soldier76:303381448121909249','Sombra:303381448243544084','Tracer:303381447925039105']:
+                    # try: 
+                    loop.create_task(client.add_reaction(posted_message, emojii))
+                    # except e:
+                        # print(e)
+
 
             @DiscordDocumentWriter.describe("account add {template}", "account add\s+({.*})$", "Adds/updates accounts using the template", False)
             async def add_account(message, match):
@@ -229,7 +302,7 @@ class DiscordObject():
 
         # Shortcut for send_message
         async def send(message, text, embed=None):
-            await client.send_message(message.channel, text, embed=embed)
+            return await client.send_message(message.channel, text, embed=embed)
 
         # OWAPI Operations
         async def check_rank(name):
@@ -297,7 +370,7 @@ class DiscordObject():
             # we do not want the bot to reply to itself
             if message.author == client.user:
                 return
-
+            print(message.content)
             if (message.channel.is_private):
                 await handle_commands(message, False)
             else:
