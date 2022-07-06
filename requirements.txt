@@ -5,7 +5,7 @@ chardet==3.0.4
 colorama==0.2.5
 decorator==3.4.0
 discord.py==0.16.12
-html5lib==0.999
+html5lib==0.999999999
 ipython==1.2.1
 pycurl==7.19.3
 pygobject==3.12.0
